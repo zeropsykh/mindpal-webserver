@@ -5,8 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 
 # Database configurations
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://mindpal_user:mindpal@localhost/mindpal_db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config.from_object(Config)
 
 db = SQLAlchemy(app)
 
