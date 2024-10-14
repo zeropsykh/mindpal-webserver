@@ -80,7 +80,7 @@ def login():
     if user and check_password_hash(user.password, password):
         print(user, user.password)
         print("Correct creds")
-        return jsonify({"message": "User logined"}), 201 
+        return jsonify({"message": "User logined", "name": user.name}), 201 
     
     return jsonify({"message": "User login unsuccessful!"}), 401
 
