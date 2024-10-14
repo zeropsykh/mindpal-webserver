@@ -76,9 +76,9 @@ def login():
 
     # Fetch user from the database
     user = User.query.filter_by(username=username).first()
-    print(user, user.password)
 
     if user and check_password_hash(user.password, password):
+        print(user, user.password)
         print("Correct creds")
         return jsonify({"message": "User logined"}), 201 
     
