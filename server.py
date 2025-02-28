@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine 
-from app.routes import auth, chat
+from app.routes import auth, chat, journal
 import uvicorn, os
 
 
@@ -18,6 +18,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(journal.router)
 
 os.environ['LANGSMITH_API_KEY'] = ""
 os.environ['LANGSMITH_ENDPOINT'] = ""

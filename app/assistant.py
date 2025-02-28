@@ -1,4 +1,3 @@
-from langchain_core.callbacks import StreamingStdOutCallbackHandler, streaming_stdout
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -11,10 +10,11 @@ from langchain_core.output_parsers import StrOutputParser
 from pathlib import Path
 from typing import List, Dict, TypedDict
 
-import os, logging
+import os, logging, json, dotenv
 
 logger = logging.getLogger("assistant")
-
+dotenv.load_dotenv()
+ollama_url = os.getenv("OLLAMA_URL")
 
 class DocumentManager:
     def __init__(self):
@@ -110,15 +110,13 @@ class ConversationState(TypedDict):
     generation: str
 
 
-
 class Assistant:
     def __init__(self, model_name: str = "llama3.1", embeddings: str = "llama3.1"):
         self.llm = ChatOllama(
+            base_url=ollama_url,
             model=model_name,
-            temperature=0.7,
-            num_ctx=4048,
-            # disable_streaming=False,
-            # callbacks=[StreamingStdOutCallbackHandler()]
+            temperature=0.9,
+            num_ctx=2048,
         )
         self.embeddings = OllamaEmbeddings(
             model=embeddings,
@@ -126,12 +124,15 @@ class Assistant:
         self.retriever = VectorStoreManager(self.embeddings, Path("./documents"), Path("./faiss")).get_retriever()
         self.prompt = PromptTemplate.from_template("""
         You are an mental health assistant who is chatting with a human to resolve there mental issues, anixety etc. 
-        Use the following pieces of retrieved context to answer the question if it is relevant for answering the question. If you don't know the answer, just say that you don't know. 
+        Use the following pieces of retrieved context to answer the question if it is relevant for answering the question in few understandable sentences.
+        If you don't know the answer, just say that you don't know. 
         Use chat history, long term memory about user and context for replying to the user.
+
         ChatHistory: {chat_history}
         LongTermMemory: {long_term_memory}
         User: {question} 
         Context: {context} 
+
         Answer:
         """)
 
@@ -180,3 +181,56 @@ class Assistant:
         state["generation"] = response
 
         return state
+
+class JournalMaker:
+    def __init__(self, model_name="hf.co/prithivMLmods/Llama-Chat-Summary-3.2-3B-GGUF:Q8_0") -> None:
+        self.llm = ChatOllama(
+            base_url=ollama_url,
+            model=model_name,
+            temperature=0.9,
+            num_ctx=4096,
+        )
+        self.prompt_template = ChatPromptTemplate.from_messages(["system", """
+            Analyze the following conversation between an 
+            MindPal mental health AI assistant and a user.
+
+            1. Generate a journal entry summarizing the conversation.
+            2. Identify the user's overall mood based on their words, tone, and emotions.
+            3. Assign a sentiment score between -1.0 (very negative) to 1.0 (very positive), with 0.0 as neutral.
+
+            Return using JSON only
+            journal_content: <Generated summary>
+            mood: <One-word Mood>
+            sentiment_score: <Decimal score>""", 
+            ("human", "{chat_history}")
+        ])
+
+    def summarize(self, chat_history: str):
+        chain = self.prompt_template | self.llm
+
+        def format_history(history):
+            return "\n".join(f"{msg.role}: {msg.content}" for msg in history)
+ 
+        logger.info("Journal creation invoked")
+
+        try:
+            response = chain.invoke(input=format_history(chat_history))
+
+            response_json = json.loads(response.content)
+
+            journal_content = response_json.get("journal_content", "").strip()
+            mood = response_json.get("mood", "").strip()
+            sentiment_score = response_json.get("sentiment_score", 0.0)
+
+            logger.info(f"Generated Journal: {journal_content}, Mood: {mood}, Sentiment: {sentiment_score}")
+            return journal_content, mood, sentiment_score
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing JSON response: {e}")
+            return None, None, None
+        except Exception as e:
+            logger.error(f"Unexpected error during journal generation: {e}")
+            return None, None, None
+
+
+

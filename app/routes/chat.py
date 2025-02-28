@@ -1,6 +1,6 @@
 from typing import Annotated, List
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from starlette import status
 
@@ -30,7 +30,7 @@ assistant = Assistant()
 async def protected(_: user_dependency):
     return {"message": "Hey I'am protected."}
 
-@router.get("/start", response_description="Create chat session", response_model=ConversationData)
+@router.get("/start", response_description="Create chat session")
 async def start_new_conversation(user: user_dependency, db: db_dependency):
     # chat_session = create_conversation(db, UUID(str(user.id)))
     conversation_id = conv_manager.start_conversation(UUID(str(user.id)), db)
@@ -49,24 +49,10 @@ async def get_conversations(limit: int, offset: int, user: user_dependency, db: 
     return get_conversations_by_user(db, UUID(str(user.id)), limit, offset)
 
 @router.post("/{conversation_id}/message", response_description="Stream chat response")
-async def conversation(msg: MessageData, conversation_id: UUID, user: user_dependency, db: db_dependency):
+async def conversation(msg: MessageData, conversation_id: UUID, background_tasks: BackgroundTasks, user: user_dependency, db: db_dependency):
     """
     Implement Server-Side Events for streaming response 
     """
-    # TODO: Add message, and generated response in database
-
-    # response_chunks = ["Hey,", "its been a long time", "since, we had a good chat,", "lets talk about what", "things happened with you"]
-    # async def stream_generator():
-    #     for chunk in response_chunks:
-    #         if await request.is_disconnected():
-    #             break
-    #
-    #         yield f"{chunk} "
-    #         await asyncio.sleep(0.5)
-    #
-    # return EventSourceResponse(stream_generator())
-    # return {"message": "hi"} 
-
     state = conv_manager.get_conversation(UUID(str(user.id)), conversation_id, db)
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -77,17 +63,30 @@ async def conversation(msg: MessageData, conversation_id: UUID, user: user_depen
 
     # state = assistant.workflow.invoke(state)
 
-    async def stream_generator():
-        async for response, _ in assistant.workflow.astream(
-            state,
-            stream_mode="messages"
-        ): 
-            if response.content:
-                print(response.content, end="|", flush=True)
-                yield f"data: {response.content}\n\n"
-                state['generation'] += response.content
+    def save_assistant_response(conv_id: UUID, content: str, db: Session):
+        conv_manager.add_messages(conversation_id, role="assistant", content=state['generation'], db=db)
+        print(f"Saved assistant response with length: {len(content)}")
 
-    conv_manager.add_messages(conversation_id, role="assistant", content=state['generation'], db=db)
+    async def stream_generator():
+        full_response = ""
+        try: 
+            async for response, _ in assistant.workflow.astream(
+                state,
+                stream_mode="messages"
+            ): 
+                if response.content:
+                    print(response.content, end="|", flush=True)
+                    yield f"{response.content}"
+                    full_response += response.content
+                    state['generation'] += response.content
+        finally:
+            if full_response:
+                background_tasks.add_task(
+                    save_assistant_response,
+                    conversation_id,
+                    full_response,
+                    db
+                )
 
     # return {"message": state["generation"]}
     return StreamingResponse(stream_generator(), media_type="text/event-stream")

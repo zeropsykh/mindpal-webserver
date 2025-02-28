@@ -43,7 +43,7 @@ async def login(user_creds: UserLogin, db: db_dependency):
 
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid user credentials")
 
-@router.get("/auth", response_description="User Info", status_code=status.HTTP_200_OK)
+@router.get("/user", response_description="User Info", status_code=status.HTTP_200_OK)
 async def get_user(user: user_dependency):
     return {"name": user.name, "email": user.email}
 

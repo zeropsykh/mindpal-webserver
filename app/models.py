@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, String, Date, Text
+from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, String, Date, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from .database import Base
@@ -15,6 +15,7 @@ class User(Base):
     password = Column(String, nullable=False)
 
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    journal_entries = relationship("JournalEntry", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"""<User(id={self.id}, name={self.name}, email={self.email}, username={self.username}, dob={self.dob})>"""
@@ -30,6 +31,7 @@ class Conversation(Base):
 
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
+    journal_entries = relationship("JournalEntry", back_populates="conversation")
 
     def __repr__(self) -> str:
         return f"<ChatSession(cid={self.id}, uid={self.uid}, title={self.title})>"
@@ -48,3 +50,19 @@ class Message(Base):
 
     def __repr__(self) -> str:
         return f"<Message(msg_id={self.msg_id})>"
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+
+    journal_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, index=True)
+    uid = Column("user_id", UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    cid = Column("conversation_id", UUID(as_uuid=True), ForeignKey("conversations.conversation_id"), nullable=True)
+    create_time = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False)
+    update_time = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False, onupdate=datetime.now(timezone.utc))
+    mood = Column(String(50), nullable=True)
+    content = Column(Text, nullable=False)
+    sentiment_score = Column(Float, nullable=True)
+
+    user = relationship("User", back_populates="journal_entries")
+    conversation = relationship("Conversation", back_populates="journal_entries")
+

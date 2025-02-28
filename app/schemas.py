@@ -35,3 +35,17 @@ class MessageData(BaseModel):
 class CoversationHistory(BaseModel):
     cid: UUID
     items: List[MessageData]
+
+class JournalEntryData(BaseModel):
+    journal_id: UUID
+    create_time: Optional[datetime] = None
+    update_time: Optional[datetime] = None
+    content: Optional[str] = None
+    mood: Optional[str] = None
+    sentiment_score: Optional[float] = None 
+    status: Optional[str] = None
+
+class JournalEditData(BaseModel):
+    content: Optional[str] = None
+    mood: Optional[str] = None
+

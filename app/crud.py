@@ -4,13 +4,17 @@ from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from starlette.types import Message
 
-from .models import Conversation, User, Message
+from app.assistant import JournalMaker
+
+from .models import Conversation, JournalEntry, User, Message
 from .schemas import UserRegister
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Create, Update, Read, Delete
+
+### User
 
 def get_password_hash(password: str):
     return pwd_context.hash(password)
@@ -36,6 +40,9 @@ def create_user(db: Session, user: UserRegister):
     db.commit()
     db.refresh(new_user)
     return new_user
+
+
+### Conversation
 
 def create_conversation(db: Session, user_id: UUID):
     conversation = Conversation(
@@ -94,3 +101,74 @@ def get_conversation_history(db: Session, conversation_id: UUID, user_id: UUID):
 
     return messages
 
+### Journal
+
+def create_journal(db: Session, user_id: UUID, conversation_id: UUID, content: str, mood: str, sentiment_score: float):
+    journal_entry = JournalEntry(
+        uid=user_id,
+        cid=conversation_id,
+        content=content,
+        mood=mood,
+        sentiment_score=sentiment_score
+    )
+
+    db.add(journal_entry)
+    db.commit()
+    db.refresh(journal_entry)
+    return journal_entry
+
+def get_multiple_journals(db: Session, user_id: UUID, limit: int = 5, offset: int = 0):
+    journal_entries = (
+        db.query(JournalEntry)
+        .filter(JournalEntry.uid == user_id)
+        .order_by(JournalEntry.update_time)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return journal_entries
+
+def get_single_journal(db: Session, user_id: UUID, journal_id: UUID):
+    journal_entry = db.query(JournalEntry).filter(
+        JournalEntry.uid == user_id and
+        JournalEntry.journal_id == journal_id
+    ).first()
+
+    return journal_entry
+
+def update_journal(db: Session, user_id: UUID, journal_id: UUID, content: str, mood: str):
+    journal_entry = get_single_journal(db, user_id, journal_id)
+
+    if not journal_entry:
+        return False
+
+    journal_entry.content = content
+    journal_entry.mood = mood
+
+    db.commit()
+    db.refresh(journal_entry)
+
+    return journal_entry
+
+def delete_journal(db: Session, user_id: UUID, journal_id: UUID):
+    journal_entry = db.query(JournalEntry).filter(
+        JournalEntry.journal_id == journal_id and 
+        JournalEntry.uid == user_id
+    ).first()
+
+    if not journal_entry:
+        return False
+
+    db.delete(journal_entry)
+    db.commit()
+    return True
+
+def get_converations_without_journal(db: Session, user_id: UUID):
+    conversations = (
+        db.query(Conversation.id)
+        .outerjoin(JournalEntry, Conversation.id == JournalEntry.cid)
+        .filter(Conversation.uid == user_id, JournalEntry.journal_id.is_(None))
+        .all()
+    )
+    return [conv.id for conv in  conversations]
